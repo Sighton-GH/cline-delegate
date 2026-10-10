@@ -1,0 +1,111 @@
+#!/usr/bin/env python3
+"""Summarise a `cline --json` run log. Read-only: never starts cline.
+
+Usage: python3 cline-summary.py <run.ndjson> [--cwd <dir>]
+
+Prints one JSON object (status, result_status, review, submit_verified, flagged_commands, ...) and exits:
+  0  finishReason == "completed"
+  1  a run_result exists with any other finishReason (read `report`)
+  2  no run_result: cline crashed, was killed by `timeout`, or never started (read `stray`)
+"""
+import json
+import os
+import sys
+
+# Commands a brief never needs; any hit is worth reading before trusting the run.
+# git stash is here because the stash stack is shared by every worktree of the repo.
+RISKY = ("git stash", "git push", "git reset --hard", "git checkout --", "npm install", "npm i ", "pip install", "curl ", "wget ", "rm -rf")
+
+
+def main() -> int:
+    args = sys.argv[1:]
+    if not args:
+        print(__doc__, file=sys.stderr)
+        return 64
+    log = args[0]
+    cwd = None
+    if "--cwd" in args:
+        cwd = os.path.realpath(args[args.index("--cwd") + 1])
+
+    result = None
+    submit_verified = None
+    tools: dict[str, int] = {}
+    commands: list[str] = []
+    edited: list[str] = []
+    errors: list[str] = []
+    stray: list[str] = []
+
+    with open(log, encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec = json.loads(line)
+            except json.JSONDecodeError:
+                # stderr merged into the log: auth failures, crashes, VPN/network errors.
+                stray.append(line[:300])
+                continue
+            if rec.get("type") == "run_result":
+                result = rec
+                continue
+            ev = rec.get("event") or {}
+            if ev.get("type") == "error" or "error" in ev:
+                errors.append(json.dumps(ev)[:300])
+            if ev.get("type") == "content_start" and ev.get("contentType") == "tool":
+                name = ev.get("toolName", "?")
+                tools[name] = tools.get(name, 0) + 1
+                inp = ev.get("input") or {}
+                if name == "submit_and_exit":
+                    submit_verified = inp.get("verified")
+                if name == "run_commands":
+                    commands.extend(str(c) for c in inp.get("commands", []))
+                elif name == "editor" and inp.get("path"):
+                    edited.append(inp["path"])
+
+    outside = []
+    if cwd:
+        for p in edited:
+            rp = os.path.realpath(p if os.path.isabs(p) else os.path.join(cwd, p))
+            if rp != cwd and not rp.startswith(cwd + os.sep):
+                outside.append(p)
+
+    # The report is the model's submit_and_exit summary. A ## RESULT block only reaches it when the
+    # dispatch prompt asks for the block inside that summary (see SKILL.md "Run one task").
+    report = (result or {}).get("text") or ""
+    fields: dict[str, str] = {}
+    for ln in report.splitlines():
+        key, sep, val = ln.strip().partition(":")
+        if sep and key in ("Status", "Verdict", "Spec", "Quality") and key not in fields:
+            fields[key] = val.strip()
+    result_status = fields.get("Status")
+    review = {k: fields[k] for k in ("Verdict", "Spec", "Quality") if k in fields} or None
+    flagged = [c for c in commands if any(t in c for t in RISKY)]
+
+    out = {
+        "status": result.get("finishReason") if result else "no_result",
+        "model": (result or {}).get("model", {}).get("id"),
+        "provider": (result or {}).get("model", {}).get("provider"),
+        "cost": (result or {}).get("aggregateUsage", {}).get("totalCost"),
+        "duration_s": round((result or {}).get("durationMs", 0) / 1000, 1),
+        "iterations": (result or {}).get("iterations"),
+        "tools": tools,
+        "edited": sorted(set(edited)),
+        "edited_outside_cwd": sorted(set(outside)),
+        "commands": commands,
+        "errors": errors[:10],
+        "stray": stray[:20],
+        "result_status": result_status,
+        "review": review,
+        "submit_verified": submit_verified,
+        "flagged_commands": flagged,
+        "report": report or None,
+    }
+    print(json.dumps(out, indent=2))
+    if not result:
+        return 2
+    return 0 if result.get("finishReason") == "completed" else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

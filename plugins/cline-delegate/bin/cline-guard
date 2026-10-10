@@ -1,0 +1,77 @@
+#!/usr/bin/env python3
+"""Install or check the Cline PreToolUse guard that ships with this plugin.
+
+Usage: cline-guard check | install [--force]
+
+The guard is a Cline hook, not a Claude Code hook: Cline runs it before every
+tool call and it refuses kill/pkill/killall/fuser -k and git stash. See
+cline-hooks/PreToolUse.py.
+
+The hooks directory is $CLINE_HOOKS_DIR, or ~/Documents/Cline/Hooks.
+
+Exit codes:
+  0  installed and identical to the bundled copy (check), or installed now (install)
+  1  not installed (check)
+  3  a different PreToolUse.py is installed (check; install without --force)
+  4  a second copy sits in ~/.cline/hooks, so the hook would run twice
+ 64  usage error
+"""
+import filecmp
+import os
+import shutil
+import sys
+
+BUNDLED = os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "cline-hooks", "PreToolUse.py")
+
+
+def hooks_dir() -> str:
+    return os.environ.get("CLINE_HOOKS_DIR") or os.path.expanduser("~/Documents/Cline/Hooks")
+
+
+def duplicate(target: str) -> str | None:
+    other = os.path.expanduser("~/.cline/hooks/PreToolUse.py")
+    if os.path.exists(other) and os.path.realpath(other) != os.path.realpath(target):
+        return other
+    return None
+
+
+def main() -> int:
+    args = sys.argv[1:]
+    if not args or args[0] not in ("check", "install"):
+        print(__doc__, file=sys.stderr)
+        return 64
+    target = os.path.join(hooks_dir(), "PreToolUse.py")
+    present = os.path.exists(target)
+    same = present and filecmp.cmp(BUNDLED, target, shallow=False)
+
+    if args[0] == "install":
+        if present and not same and "--force" not in args:
+            print(f"{target} exists and differs from the bundled guard; not overwriting. "
+                  "Compare them, then re-run with --force (the old file is kept as PreToolUse.py.bak).", file=sys.stderr)
+            return 3
+        if present and not same:
+            shutil.copy2(target, target + ".bak")
+        if not same:
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            shutil.copyfile(BUNDLED, target)
+            os.chmod(target, 0o755)
+        print(f"installed: {target}")
+    elif not present:
+        print(f"missing: {target}. Run `cline-guard install`.", file=sys.stderr)
+        return 1
+    elif not same:
+        print(f"differs: {target} is not the bundled guard. Compare it with {os.path.realpath(BUNDLED)}.", file=sys.stderr)
+        return 3
+    else:
+        print(f"ok: {target}")
+
+    dup = duplicate(target)
+    if dup:
+        print(f"warning: {dup} also exists; Cline searches both directories and would run the hook twice. "
+              "Keep one copy.", file=sys.stderr)
+        return 4
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

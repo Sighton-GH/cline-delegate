@@ -1,0 +1,12 @@
+{
+  "name": "cline-delegate",
+  "version": "0.1.0",
+  "description": "Delegate implementation and review to the Cline CLI (cline --yolo --json) in a git worktree: Claude writes the briefs, Cline does the typing, Claude reads a one-screen run verdict, re-runs the gates and merges.",
+  "author": {
+    "name": "Sighton-GH"
+  },
+  "homepage": "https://github.com/Sighton-GH/cline-delegate",
+  "repository": "https://github.com/Sighton-GH/cline-delegate",
+  "license": "MIT",
+  "keywords": ["cline", "delegation", "worktree", "free-models"]
+}

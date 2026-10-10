@@ -1,0 +1,5 @@
+{"event":{"type":"content_start","contentType":"tool","toolName":"editor","input":{"path":"/etc/hosts"}}}
+{"event":{"type":"content_start","contentType":"tool","toolName":"editor","input":{"path":"src/a.ts"}}}
+{"event":{"type":"content_start","contentType":"tool","toolName":"run_commands","input":{"commands":["git stash -u","npm test"]}}}
+{"event":{"type":"error","message":"tool failed"}}
+{"type":"run_result","finishReason":"error","text":"## RESULT\nVerdict: CHANGES_REQUESTED\nSpec: FAIL\nQuality: PASS\n","model":{"id":"cline-free/example","provider":"cline-pass"},"aggregateUsage":{"totalCost":0},"durationMs":1000,"iterations":2}

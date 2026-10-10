@@ -1,0 +1,21 @@
+{
+  "name": "cline-delegate",
+  "description": "Cline-driven development: hand implementation and review to the Cline CLI's headless mode while Claude plans, briefs, and verifies.",
+  "owner": {
+    "name": "Sighton-GH",
+    "url": "https://github.com/Sighton-GH"
+  },
+  "plugins": [
+    {
+      "name": "cline-delegate",
+      "source": "./plugins/cline-delegate",
+      "description": "The cline-delegate skill plus cline-summary (read-only run-log verdict) and cline-guard (installs a Cline hook that refuses kill and git stash): Claude writes briefs, `cline --yolo --json` implements or reviews in a git worktree, Claude verifies and merges.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Sighton-GH"
+      },
+      "license": "MIT",
+      "keywords": ["cline", "delegation", "worktree", "free-models", "subagent-driven-development"]
+    }
+  ]
+}
