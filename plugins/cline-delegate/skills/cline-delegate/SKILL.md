@@ -84,7 +84,7 @@ Brief templates live in `~/.claude/plugins/cache/opencode-delegate/opencode-dele
 ## Rules
 
 - **One Cline run per worktree at a time.** Parallel runs on separate worktrees are untested, so run one at a time until a test shows they're safe.
-- **The kill guard must be installed.** Run `cline-guard check` before a plan-sized dispatch; exit 1 means run `cline-guard install`. It puts this plugin's `cline-hooks/PreToolUse.py` at `~/Documents/Cline/Hooks/PreToolUse.py` (or `$CLINE_HOOKS_DIR`), a global Cline hook that refuses `kill`, `pkill`, `killall`, `fuser -k` and `git stash` before they run. On 2026-10-06 a Cline run, waiting on slow gates, `kill -9`'d every vitest, tsc and eslint process on the box, including other jobs' gate runs.
+- **The kill guard must be installed.** Run `cline-guard check` before a plan-sized dispatch; exit 1 means run `cline-guard install`. Exit 3 means a locally edited copy is installed: diff the two files it names, and carry on if only messages differ; if a rule is missing, tell the user. It puts this plugin's `cline-hooks/PreToolUse.py` at `~/Documents/Cline/Hooks/PreToolUse.py` (or `$CLINE_HOOKS_DIR`), a global Cline hook that refuses `kill`, `pkill`, `killall`, `fuser -k` and `git stash` before they run. On 2026-10-06 a Cline run, waiting on slow gates, `kill -9`'d every vitest, tsc and eslint process on the box, including other jobs' gate runs.
   - The hook answers with `overrideInput`: the command becomes a printed refusal that exits 1, and the run continues.
   - It never returns `cancel: true`, because in 3.0.68 that aborts the whole run.
   - Hooks read `tool_call.input`. `preToolUse.parameters` stringifies its values.

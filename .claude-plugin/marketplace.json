@@ -10,7 +10,7 @@
       "name": "cline-delegate",
       "source": "./plugins/cline-delegate",
       "description": "The cline-delegate skill plus cline-summary (read-only run-log verdict) and cline-guard (installs a Cline hook that refuses kill and git stash): Claude writes briefs, `cline --yolo --json` implements or reviews in a git worktree, Claude verifies and merges.",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "author": {
         "name": "Sighton-GH"
       },
