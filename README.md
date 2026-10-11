@@ -37,12 +37,27 @@ every worktree of a repo shares one stash stack.
 
 ## Install
 
-From inside Claude Code:
+From inside Claude Code 2.1.275 or later, one command adds the marketplace
+and installs the plugin:
 
 ```
-/plugin marketplace add Sighton-GH/cline-delegate
-/plugin install cline-delegate
+/plugin install cline-delegate --marketplace Sighton-GH/cline-delegate
 ```
+
+On an older Claude Code, run these two commands one at a time — paste the
+first, wait for it to finish, then paste the second.
+
+1. Add the marketplace:
+
+   ```
+   /plugin marketplace add Sighton-GH/cline-delegate
+   ```
+
+2. Install the plugin:
+
+   ```
+   /plugin install cline-delegate
+   ```
 
 Start a new session so the plugin loads, then install the Cline guard:
 
@@ -101,7 +116,15 @@ re-running the gates and merging.
 ```
 git clone https://github.com/Sighton-GH/cline-delegate.git
 cd cline-delegate
+```
+
+Then, from the clone, register it (one command at a time):
+
+```
 claude plugin marketplace add "$PWD"
+```
+
+```
 claude plugin install cline-delegate@cline-delegate
 ```
 
@@ -109,14 +132,28 @@ Before committing:
 
 ```
 bash plugins/cline-delegate/tests/run.sh
+```
+
+```
 claude plugin validate ./plugins/cline-delegate --strict
+```
+
+```
 claude plugin validate . --strict
 ```
 
 To ship a change, bump `version` in both
 `plugins/cline-delegate/.claude-plugin/plugin.json` and
 `.claude-plugin/marketplace.json`. `claude plugin update` only refetches when
-the version changes.
+the version changes. Users then run these one at a time:
+
+```
+claude plugin marketplace update cline-delegate
+```
+
+```
+claude plugin update cline-delegate
+```
 
 ## License
 
