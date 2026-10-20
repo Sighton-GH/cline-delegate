@@ -36,16 +36,20 @@ If a `cline` call is denied:
 
 ```bash
 CLEAN_ENV=(env -i HOME="$HOME" PATH="$PATH" USER="$USER" TERM=dumb LANG="${LANG:-C.UTF-8}")
-"${CLEAN_ENV[@]}" cline --yolo --json -c <worktree-abs-path> -t <seconds> \
-  "Read <brief-abs-path> and do exactly what it says. Your submit_and_exit summary must contain the brief's ## RESULT block verbatim." \
+"${CLEAN_ENV[@]}" cline --yolo --json -c <worktree-abs-path> -m <model> -t <seconds> \
+  "Your working directory is <worktree-abs-path>; never cd anywhere else. Read <brief-abs-path> and do exactly what it says. Your submit_and_exit summary must contain the brief's ## RESULT block verbatim." \
   > <job-tmp>/<task>.ndjson 2>&1
 cline-summary <job-tmp>/<task>.ndjson --cwd <worktree-abs-path>
 
-# review runs: same, plus -p, pointed at a review brief (see "Differences from oc-task")
-"${CLEAN_ENV[@]}" cline --yolo --json -p -c <worktree-abs-path> -t <seconds> \
-  "Read <review-brief-abs-path> and do exactly what it says. Your submit_and_exit summary must contain the brief's ## RESULT block verbatim." \
+# review runs: the same act-mode command (not -p), pointed at a review brief (see "Differences from oc-task")
+"${CLEAN_ENV[@]}" cline --yolo --json -c <worktree-abs-path> -m <model> -t <seconds> \
+  "Your working directory is <worktree-abs-path>; never cd anywhere else. This is a read-only review: do not create, edit or delete any file, and do not commit. Read <review-brief-abs-path> and do exactly what it says. Finish by calling submit_and_exit; its summary must contain the brief's ## RESULT block verbatim." \
   > <log> 2>&1
 ```
+
+- **Always pass `-m <model>`.** `-m` (with or without `-P`) is saved as that provider's default in `~/.cline/data/settings/providers.json`, so a later launch without it silently runs whatever the last run picked. After a run with paid `-P cline -m meta/muse-spark-1.3-contributor`, a launch with no `-m` ran paid Muse ($0.17). After a smoke test of every model, the default was whichever model came last. Check `model` and `cost` in the summary after every run.
+- **Pin the working directory in the prompt** (the first sentence above). On 2026-10-17, with only "Read <main-checkout>/.oc-runs/.../brief.md and do exactly what it says", two runs `cd`'d into the main checkout, where the brief lived, and ran `git add -A && git commit` there, committing the owner's untracked files. Two other runs with the same prompt stayed put. If the brief lives in another checkout, add: "<that checkout> is a different checkout: read the brief there, touch nothing else." After every run, check `edited_outside_cwd`, plus `git -C <main-checkout> status --short` and `log -1`.
+- **Launch long runs with the Bash tool's `run_in_background`, not a trailing `&`.** A run started with `&` inside a foreground call sends no completion notification. If one is already running that way, start a background waiter, and anchor its pattern to the start of the node command line: `until ! pgrep -f "^node [^ ]*cline --yolo --json -c <worktree-abs-path>" >/dev/null; do sleep 30; done`. An unanchored pattern such as `pgrep -f "<worktree name>"` also matches the waiter's own shell, whose command line contains the pattern, so the waiter never ends. On 2026-10-20 that made a review that finished in 9 minutes look hung for 80, and a `kill` built from the same pattern signalled the calling shell instead of Cline.
 
 - **Always launch through `env -i`.** Cline's shell inherits the caller's whole environment. Launched from Claude Code that includes `CLAUDE_CODE_MESSAGING_TOKEN` and `VSCODE_CLI_REQUIRE_TOKEN` (62 variables in all), handed to an agent with every command auto-approved. Under `env -i` it sees 11 and still signs in, because its auth lives in `~/.cline`. Verified 2026-10-04.
 - **If the session is itself worktree-isolated, use `unset` instead.** There the approver refuses `env -i HOME=… cline …` (setting `HOME` looks like injecting git configuration, and the expansions are "too complex") and `env -u A -u B cline …`. This shape is accepted: `unset <NAME> <NAME> … && cline --yolo --json -c <worktree> -t <s> "<prompt>" > <log> 2>&1`. Get the names, never the values, from `env | cut -d= -f1 | grep -i -E 'token|key|secret|claude|vscode|session'`. Cline keeps the real `HOME`, which it needs for `~/.cline`.
@@ -68,16 +72,30 @@ The summary prints `status`, `result_status` (the `## RESULT` `Status:` line), `
 - `flagged_commands` isn't empty → read each one. A `git stash` touches the stash stack every worktree of the repo shares: run `git stash list` and make sure nothing was left behind or taken from another session.
 - Read `commands` for anything else outside the brief (network calls, edits through shell redirection).
 
+## Models and daily caps
+
+ClinePass offers several free models, and **each has its own daily cap**. All four of these ran a smoke test at cost 0 with `-m` (2026-10-19, cline 3.0.73):
+
+- `cline-free/muse-spark-1.3-contributor`
+- `cline-free/minimax-m3.1-flash`
+- `cline-free/mimo-v2.6-flash`
+- `cline-free/nemotron-3.5-super-vl`
+
+- **The cap signal.** The run ends `status: error`, exit 1, with no RESULT block and this in `errors`/`report`: `INFERENCE_CAP_ERROR: Error 429: Daily free limit reached on model <model>. Try again in <time>`. A run dispatched after the cap fails within a second, with no edits.
+- **On a cap,** tell the user right away, as its own line at the top of your message: they may want to reset or swap the account. Commit any uncommitted edits in the worktree as a WIP checkpoint. Then either move the task to another free model, using the original brief plus "a prior run committed steps 1–N; continue from step N+1", or wait for the reset.
+- **The cap seems to count input tokens.** One heavy implement run used 2.2 M input tokens and spent a whole day's Muse allowance in 14 minutes. A whole-branch review of a 900 KB diff read 6.5 M. A reset lasts roughly 25–40 minutes of heavy work. Keep briefs token-lean: `rg` plus `sed -n` line ranges, no whole-file reads of large files, and a commit after every step so a cap mid-task loses nothing. Send whole-branch reviews to a model whose cap you can spare.
+- **Paid models** run with `-P cline -m <model>`, for example `meta/muse-spark-1.3-contributor` at about $0.10 per million input tokens. `cline-summary`'s `cost` undercounts: a $0.50 credit ran out at $0.31 of logged cost. Budget about 60% of the stated credit, and use paid runs only for tight fix briefs. Then pass the free `-m` again explicitly on the next launch (see "Always pass `-m`").
+
 ## Differences from oc-task
 
 | opencode-driven-development | with Cline |
 |---|---|
 | `oc-task` creates `.oc-worktrees/<branch>` | You create it: `git -C <repo> worktree add <repo>/.claude/worktrees/cline-<slug> -b cline/<slug> [<start>]`. If the repo doesn't ignore `.claude/worktrees/`, add it to `<repo>/.git/info/exclude` rather than editing the tracked `.gitignore`. Link `node_modules` if the gates need it. To take over a plan an opencode run started, pass its branch (`oc/<slug>`) as `<start>`: the allow rule names `.claude/worktrees/`, so the `.oc-worktrees/` checkout can't be reused. Worktree copies inside the repo get picked up by `eslint .` and the like; add `.claude` and `.oc-worktrees` to the linter's ignores. |
 | `--session ID` resumes a fix round | No resume flag exists in 3.0.68. Every dispatch is fresh: fix briefs carry the original brief path plus the findings verbatim. |
-| `--role review` (read-only agent) | Its own brief, written from `task-reviewer-brief.md` (or `re-review-brief.md` / `final-reviewer-brief.md`) with the absolute path of a diff file you write with `git -C <wt> diff <base>..HEAD > .oc-runs/<slug>/task-N.diff`. Never re-send the implementer brief. Dispatch it with `-p` (plan mode). Plan mode isn't verified to be read-only, so run `git -C <wt> status --short` before and after. If a review changed files, stop and tell the user. |
+| `--role review` (read-only agent) | Its own brief, written from `task-reviewer-brief.md` (or `re-review-brief.md` / `final-reviewer-brief.md`) with the absolute path of a diff file you write with `git -C <wt> diff <base>..HEAD > .oc-runs/<slug>/task-N.diff`. Never re-send the implementer brief. Dispatch it in act mode with the review prompt above (a read-only line plus "finish by calling submit_and_exit"), not `-p`. On 2026-10-19, a `-p` whole-branch review read everything over 58 iterations, then ended `completed` with "composing the final report with the required RESULT block". It never called `submit_and_exit`, so `result_status` and `review` were null and the findings existed only in its reasoning. Neither mode is enforced read-only, so run `git -C <wt> status --short` before and after. If a review changed files, stop and tell the user. |
 | `oc-task --merge` audits files against each brief | You audit: `git -C <wt> diff --name-only <base>..HEAD` must sit inside the briefs' `# Files` lists. Then run the gates and merge with `superpowers:finishing-a-development-branch`. |
-| `oc-models --free` | The model is whatever `cline auth` saved, so the summary's `model` is the record. Ledger it. Pinning with `-P`/`-m` is untested. |
-| Exit 5 rate limit | No known signal. A `no_result` or error mentioning quota or rate → stop and tell the user; don't retry on your own. |
+| `oc-models --free` | Pick from the free list in "Models and daily caps" and pass it with `-m` on every launch. The summary's `model` is the record. Ledger it. |
+| Exit 5 rate limit | `INFERENCE_CAP_ERROR` … "Daily free limit reached on model …" in `errors` (see "Models and daily caps"). Stop and tell the user. Another free model has its own cap; don't retry the same one on your own. Any other `no_result` or error that mentions quota or rate: stop and tell the user. |
 
 Brief templates live in `~/.claude/plugins/cache/opencode-delegate/opencode-delegate/*/skills/opencode-driven-development/`. Use them unchanged, including the commit-per-step and `## RESULT` blocks.
 
@@ -106,7 +124,10 @@ Brief templates live in `~/.claude/plugins/cache/opencode-delegate/opencode-dele
 | Trusting "2 pass, 0 fail" in `report` | Run the tests yourself. |
 | Brief and log inside the worktree | Keep them outside, or they land in the diff and the file audit. |
 | Launching `cline` without `env -i` or `unset` | Tokens in the caller's environment reach an auto-approved agent. Use `CLEAN_ENV`, or the `unset … &&` form in an isolated session. |
-| Bare "Read X and do exactly what it says" prompt | Add the RESULT-in-summary sentence, or `result_status` may come back null. |
+| Bare "Read X and do exactly what it says" prompt | Add the working-directory sentence and the RESULT-in-summary sentence, or the run may commit in another checkout and `result_status` may come back null. |
+| Launching without `-m` | The last `-m` used is the saved default, which may be paid or a different model. Pass it every time. |
+| Review dispatched with `-p` | Plan mode may end without `submit_and_exit`. Use act mode with the read-only line. |
+| Retrying a capped model | Its cap lasts until the reset time in the error. Tell the user, then use another free model. |
 
 ## Smoke test (after changing `cline-summary` or upgrading cline)
 
@@ -117,3 +138,5 @@ Last verified 2026-10-04 on cline 3.0.68, run by Claude in auto mode with the `a
 Field record (2026-10-04): a fix round finished in 77 s over 9 iterations and a 2,880-line whole-branch review in 166 s over 22, both free. Plan mode stayed read-only (same HEAD, clean tree). Muse Spark through Cline kept working while Muse through opencode was rate limited, so the two appear to use separate quotas.
 
 The rule must sit in `autoMode.allow` (the `/permissions` **Auto mode** tab). Added on the regular Allow tab, it lands in `permissions.allow`, where prose is treated as a tool pattern and does nothing. Check with `claude auto-mode config | jq '.allow[-1]'`.
+
+Field record (2026-10-17 to 2026-10-19, cline 3.0.73): the free Muse cap was hit four times, each after 14–40 minutes of heavy work. The four free models in "Models and daily caps" each passed a no-cost smoke test with `-m`. A `-p` review ended without `submit_and_exit`; the act-mode re-run with the read-only line produced its RESULT block and left the tree clean.
